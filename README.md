@@ -33,7 +33,7 @@ Pré-requisitos: **Node.js 26** e **Docker** (ou um PostgreSQL 18 instalado).
    ```
 2. Rode:
    ```bash
-   docker compose up -d          # sobe o PostgreSQL
+   docker compose up -d --wait   # sobe o PostgreSQL e espera ficar pronto
    npm install                   # instala e gera o Prisma Client
    npx prisma migrate deploy     # cria as tabelas
    npm run start:dev             # API em http://localhost:3000

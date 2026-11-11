@@ -1,4 +1,4 @@
-# PostgreSQL local para desenvolvimento: docker compose up -d
+# PostgreSQL local para desenvolvimento: docker compose up -d --wait
 services:
   postgres:
     image: postgres:18
@@ -8,3 +8,10 @@ services:
       POSTGRES_DB: flaglab
     ports:
       - '5432:5432'
+    # "pronto" = aceitando conexões por TCP. Na 1ª subida o Postgres roda um servidor
+    # temporário só no socket local (initdb); checar por TCP evita o falso "pronto".
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U postgres -d flaglab']
+      interval: 2s
+      timeout: 3s
+      retries: 30
