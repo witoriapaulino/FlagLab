@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FlagLab · Painel</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #1f2937; background: #f8fafc; }
+    body { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+    h1 { margin: 0 0 .25rem; } .sub { color: #64748b; margin: 0 0 1.5rem; }
+    section { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+    label { font-size: .85rem; color: #475569; display: block; margin-bottom: .25rem; }
+    input, button { font: inherit; padding: .45rem .6rem; border-radius: 6px; border: 1px solid #cbd5e1; }
+    button { background: #2563eb; color: #fff; border-color: #2563eb; cursor: pointer; }
+    button.sec { background: #fff; color: #2563eb; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .linha { display: flex; gap: .75rem; align-items: end; flex-wrap: wrap; }
+    .linha > div { flex: 1; min-width: 180px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: .5rem; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    .amb { display: flex; gap: .35rem; align-items: center; }
+    .amb input[type=number] { width: 4.2rem; }
+    .msg { padding: .6rem .8rem; border-radius: 6px; margin-bottom: 1rem; display: none; }
+    .msg.ok { display: block; background: #dcfce7; color: #166534; }
+    .msg.erro { display: block; background: #fee2e2; color: #991b1b; }
+    code { background: #f1f5f9; padding: 0 .3rem; border-radius: 4px; }
+    .muted { color: #64748b; font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <h1>FlagLab</h1>
+  <p class="sub">Feature flags com configuração versionada · cada mudança gera uma versão com autor e motivo</p>
+
+  <div id="msg" class="msg" role="status" aria-live="polite"></div>
+
+  <section aria-labelledby="t-acesso">
+    <h2 id="t-acesso">Acesso</h2>
+    <div class="linha">
+      <div><label for="token">Token do usuário</label><input id="token" type="password" autocomplete="off" style="width:100%"></div>
+      <button id="entrar">Entrar</button>
+      <button id="sair" class="sec">Sair</button>
+    </div>
+    <p class="muted" id="quem">Sem login: só leitura. O token é criado pelo administrador em <code>POST /usuarios</code>.</p>
+  </section>
+
+  <section aria-labelledby="t-mudanca">
+    <h2 id="t-mudanca">Motivo da próxima mudança</h2>
+    <label for="motivo">Obrigatório para criar, alterar ou fazer rollback (mínimo 10 caracteres)</label>
+    <input id="motivo" style="width:100%" placeholder="Ex.: Aprovado pelo CCB na RFC-002">
+  </section>
+
+  <section aria-labelledby="t-nova">
+    <h2 id="t-nova">Nova flag</h2>
+    <div class="linha">
+      <div><label for="chave">Chave (kebab-case)</label><input id="chave" placeholder="novo-checkout" style="width:100%"></div>
+      <div><label for="descricao">Descrição</label><input id="descricao" placeholder="Tela nova de checkout" style="width:100%"></div>
+      <button id="criar" class="precisa-login">Criar</button>
+    </div>
+  </section>
+
+  <section aria-labelledby="t-flags">
+    <h2 id="t-flags">Flags</h2>
+    <table>
+      <thead><tr><th>Flag</th><th>DEV</th><th>HOMOLOG</th><th>PROD</th><th></th></tr></thead>
+      <tbody id="flags"></tbody>
+    </table>
+  </section>
+
+  <section aria-labelledby="t-hist" id="painel-hist" hidden>
+    <h2 id="t-hist">Histórico de <code id="hist-chave"></code></h2>
+    <table>
+      <thead><tr><th>Ambiente</th><th>Versão</th><th>Estado</th><th>Autor</th><th>Motivo</th><th>Quando</th><th></th></tr></thead>
+      <tbody id="hist"></tbody>
+    </table>
+  </section>
+
+<script>
+  // Toda saída de dados usa textContent (nunca innerHTML com dados), para evitar XSS.
+  const AMBIENTES = ['DEV', 'HOMOLOG', 'PROD'];
+  const $ = (id) => document.getElementById(id);
+  let usuario = null;
+
+  function el(tag, props = {}, filhos = []) {
+    const e = Object.assign(document.createElement(tag), props);
+    for (const f of [].concat(filhos)) e.append(f);
+    return e;
+  }
+
+  function aviso(texto, tipo = 'ok') {
+    const m = $('msg');
+    m.className = 'msg ' + tipo;
+    m.textContent = texto;
+  }
+
+  async function api(metodo, caminho, corpo) {
+    const headers = { 'Content-Type': 'application/json' };
+    const token = localStorage.getItem('flaglab-token');
+    if (token) headers.Authorization = 'Bearer ' + token;
+    const r = await fetch(caminho, { method: metodo, headers, body: corpo ? JSON.stringify(corpo) : undefined });
+    const dados = await r.json().catch(() => null);
+    if (!r.ok) {
+      const detalhe = Array.isArray(dados?.message) ? dados.message.join('; ') : dados?.message;
+      throw new Error(detalhe || 'Erro ' + r.status);
+    }
+    return dados;
+  }
+
+  function motivo() {
+    const m = $('motivo').value.trim();
+    if (m.length < 10) throw new Error('Preencha o motivo (mínimo 10 caracteres) antes de mudar algo.');
+    return m;
+  }
+
+  async function executar(acao, sucesso) {
+    try {
+      await acao();
+      aviso(sucesso);
+      await carregar();
+    } catch (e) {
+      aviso(e.message, 'erro');
+    }
+  }
+
+  function atualizarLogin() {
+    $('quem').textContent = usuario
+      ? 'Logado como ' + usuario.nome + ' (' + usuario.email + '). Suas mudanças ficam registradas no seu nome.'
+      : 'Sem login: só leitura. O token é criado pelo administrador em POST /usuarios.';
+    document.querySelectorAll('.precisa-login').forEach((b) => (b.disabled = !usuario));
+  }
+
+  async function entrar() {
+    const token = $('token').value.trim() || localStorage.getItem('flaglab-token');
+    if (!token) return;
+    localStorage.setItem('flaglab-token', token);
+    try {
+      usuario = await api('GET', '/usuarios/eu');
+      $('token').value = '';
+    } catch {
+      usuario = null;
+      localStorage.removeItem('flaglab-token');
+      aviso('Token inválido.', 'erro');
+    }
+    atualizarLogin();
+    await carregar();
+  }
+
+  function celulaAmbiente(flag, amb) {
+    const ativa = el('input', { type: 'checkbox', checked: flag.estado[amb], className: 'precisa-login', disabled: !usuario });
+    ativa.setAttribute('aria-label', flag.chave + ' ligada em ' + amb);
+    const pct = el('input', { type: 'number', min: 0, max: 100, value: flag.percentual[amb], className: 'precisa-login', disabled: !usuario });
+    pct.setAttribute('aria-label', 'percentual de ' + flag.chave + ' em ' + amb);
+    const salvar = el('button', { textContent: 'Salvar', className: 'sec precisa-login', disabled: !usuario });
+    salvar.onclick = () =>
+      executar(
+        () => api('PUT', '/flags/' + flag.chave + '/ambientes/' + amb, { ativa: ativa.checked, percentual: Number(pct.value), motivo: motivo() }),
+        flag.chave + ' atualizada em ' + amb + '.',
+      );
+    return el('td', {}, el('div', { className: 'amb' }, [ativa, pct, el('span', { textContent: '%' }), salvar]));
+  }
+
+  async function carregar() {
+    const flags = await api('GET', '/flags');
+    const corpo = $('flags');
+    corpo.replaceChildren();
+    if (!flags.length) corpo.append(el('tr', {}, el('td', { colSpan: 5, className: 'muted', textContent: 'Nenhuma flag ainda.' })));
+    for (const f of flags) {
+      const ver = el('button', { textContent: 'Histórico', className: 'sec' });
+      ver.onclick = () => historico(f.chave);
+      corpo.append(
+        el('tr', {}, [
+          el('td', {}, [el('strong', { textContent: f.chave }), el('div', { className: 'muted', textContent: f.descricao })]),
+          ...AMBIENTES.map((a) => celulaAmbiente(f, a)),
+          el('td', {}, ver),
+        ]),
+      );
+    }
+    const aberto = $('hist-chave').textContent;
+    if (aberto && !$('painel-hist').hidden) await historico(aberto);
+  }
+
+  async function historico(chave) {
+    const versoes = await api('GET', '/flags/' + chave + '/historico');
+    $('hist-chave').textContent = chave;
+    $('painel-hist').hidden = false;
+    const corpo = $('hist');
+    corpo.replaceChildren();
+    for (const v of versoes) {
+      const voltar = el('button', { textContent: 'Voltar a esta', className: 'sec precisa-login', disabled: !usuario });
+      voltar.onclick = () =>
+        executar(
+          () => api('POST', '/flags/' + chave + '/ambientes/' + v.ambiente + '/rollback', { versao: v.versao, motivo: motivo() }),
+          'Rollback de ' + chave + ' em ' + v.ambiente + ' para v' + v.versao + '.',
+        );
+      corpo.append(
+        el('tr', {}, [
+          el('td', { textContent: v.ambiente }),
+          el('td', { textContent: 'v' + v.versao }),
+          el('td', { textContent: (v.ativa ? 'ligada' : 'desligada') + ' · ' + v.percentual + '%' }),
+          el('td', { textContent: v.autor }),
+          el('td', { textContent: v.motivo }),
+          el('td', { textContent: new Date(v.criadoEm).toLocaleString('pt-BR') }),
+          el('td', {}, voltar),
+        ]),
+      );
+    }
+  }
+
+  $('entrar').onclick = entrar;
+  $('sair').onclick = () => {
+    localStorage.removeItem('flaglab-token');
+    usuario = null;
+    atualizarLogin();
+    carregar();
+  };
+  $('criar').onclick = () =>
+    executar(async () => {
+      await api('POST', '/flags', { chave: $('chave').value.trim(), descricao: $('descricao').value.trim() });
+      $('chave').value = '';
+      $('descricao').value = '';
+    }, 'Flag criada (desligada nos 3 ambientes).');
+
+  atualizarLogin();
+  entrar().then(() => (usuario ? null : carregar())).catch((e) => aviso(e.message, 'erro'));
+</script>
+</body>
+</html>

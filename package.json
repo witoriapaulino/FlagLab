@@ -1,6 +1,6 @@
 {
   "name": "flaglab",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "FlagLab — servidor de feature flags com configuração versionada (laboratório de Gerência de Configuração)",
   "author": "Anna Witória Paulino",
   "private": true,
