@@ -1,0 +1,46 @@
+// FlagLab — modelo de dados (IC-DB-02)
+// Migrações em db/migrations/ (IC-DB-01)
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "cjs"
+  importFileExtension = ""
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Ambiente {
+  DEV
+  HOMOLOG
+  PROD
+}
+
+/// O item de configuração: uma funcionalidade que pode ser ligada ou desligada.
+model Flag {
+  id        Int          @id @default(autoincrement())
+  chave     String       @unique @db.VarChar(60)
+  descricao String       @db.VarChar(200)
+  criadoEm  DateTime     @default(now()) @map("criado_em")
+  versoes   FlagVersao[]
+
+  @@map("flags")
+}
+
+/// Cada mudança gera uma versão NOVA (o histórico nunca é editado). O estado atual é a maior versão do ambiente.
+model FlagVersao {
+  id       Int      @id @default(autoincrement())
+  flagId   Int      @map("flag_id")
+  ambiente Ambiente
+  versao   Int
+  ativa    Boolean
+  autor    String   @db.VarChar(80)
+  motivo   String   @db.VarChar(300)
+  criadoEm DateTime @default(now()) @map("criado_em")
+  flag     Flag     @relation(fields: [flagId], references: [id])
+
+  @@unique([flagId, ambiente, versao])
+  @@map("flag_versoes")
+}

@@ -1,0 +1,54 @@
+# IC-CI-01: integração contínua do FlagLab
+# Em todo push e PR: instala → build → migrações → testes unitários → testes de integração
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-e-testes:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: flaglab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/flaglab?schema=public
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências (gera o Prisma Client)
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Aplicar migrações (db/migrations)
+        run: npx prisma migrate deploy
+
+      - name: Testes unitários
+        run: npm run test:unit
+
+      - name: Testes de integração (Supertest + PostgreSQL)
+        run: npm run test:int
