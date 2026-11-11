@@ -1,4 +1,4 @@
-import { IsBoolean, IsInt, IsString, Matches, MaxLength, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CriarFlagDto {
   /** RN01: kebab-case, ex.: nova-tela-checkout */
@@ -10,20 +10,10 @@ export class CriarFlagDto {
   @MinLength(5)
   @MaxLength(200)
   descricao!: string;
-
-  @IsString()
-  @MinLength(2)
-  @MaxLength(80)
-  autor!: string;
 }
 
-/** RN03: toda mudança registra quem fez e por quê. */
+/** RN03: toda mudança registra por quê. O autor vem do usuário logado (RN06). */
 export class MudancaDto {
-  @IsString()
-  @MinLength(2)
-  @MaxLength(80)
-  autor!: string;
-
   @IsString()
   @MinLength(10)
   @MaxLength(250)
@@ -33,6 +23,13 @@ export class MudancaDto {
 export class AlterarFlagDto extends MudancaDto {
   @IsBoolean()
   ativa!: boolean;
+
+  /** RF06: % de usuários que recebem a flag ligada. Padrão 100. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  percentual?: number;
 }
 
 export class RollbackDto extends MudancaDto {
