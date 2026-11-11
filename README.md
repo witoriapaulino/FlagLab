@@ -19,11 +19,11 @@ Requisitos, regras de negócio e rastreabilidade estão em [`docs/REQUISITOS.md`
 
 ## Stack
 
-NestJS 11 · Prisma 7 · PostgreSQL 16 · Jest + Supertest · GitHub Actions
+NestJS 12 · Prisma 7 · PostgreSQL 18 · Node.js 26 LTS · TypeScript 6 · Jest 30 + Supertest 7 · GitHub Actions
 
 ## Como rodar
 
-Pré-requisitos: **Node.js 22** e **Docker** (ou um PostgreSQL 16 instalado).
+Pré-requisitos: **Node.js 26** e **Docker** (ou um PostgreSQL 18 instalado).
 
 1. Crie o arquivo `.env` na raiz com este conteúdo e troque a `API_KEY`:
    ```env
